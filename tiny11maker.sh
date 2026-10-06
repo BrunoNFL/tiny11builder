@@ -25,6 +25,8 @@ SELECTED_INDEX=""
 COMPRESS_MODE="LZMS" # Default recovery compression
 KEEP_SCRATCH=0
 MOUNTED_VOLUME=""
+USERNAME_VAL="Tiny11"
+SKIP_AUTOLOGON=0
 
 # Colors for terminal output
 RED='\033[0;31m'
@@ -52,6 +54,8 @@ print_usage() {
     echo "  -o, --output <path>      Output ISO file path (default: ./tiny11.iso)"
     echo "  -n, --index <number>     Windows image SKU index to export (optional, prompts if omitted)"
     echo "  -w, --wimlib <path>      Custom path to wimlib-imagex executable"
+    echo "  -u, --username <name>    Local administrator account name (default: Tiny11)"
+    echo "      --skip-autologon     Do not auto-logon to the local account on first boot"
     echo "      --fast               Use LZX compression instead of LZMS (faster export, slightly larger ISO)"
     echo "      --keep-scratch       Do not delete scratch directory after completion"
     echo "      --check-deps         Verify installed prerequisites and exit"
@@ -180,6 +184,14 @@ while [[ $# -gt 0 ]]; do
         -w|--wimlib)
             WIMLIB_BIN="$2"
             shift 2
+            ;;
+        -u|--username)
+            USERNAME_VAL="$2"
+            shift 2
+            ;;
+        --skip-autologon)
+            SKIP_AUTOLOGON=1
+            shift
             ;;
         --fast)
             COMPRESS_MODE="LZX"
@@ -397,8 +409,17 @@ AUTOUNATTEND_SRC="$SCRIPT_DIR/autounattend.xml"
 AUTOUNATTEND_SCRATCH="$SCRATCH_DIR/autounattend.xml"
 
 # Update processorArchitecture dynamically in autounattend.xml (index remains 1 for single-SKU exported image)
+# Also inject configured local username
 sed -e "s/processorArchitecture=\"amd64\"/processorArchitecture=\"$ARCH\"/g" \
+    -e "s/<Name>Tiny11<\/Name>/<Name>$USERNAME_VAL<\/Name>/g" \
+    -e "s/<DisplayName>Tiny11<\/DisplayName>/<DisplayName>$USERNAME_VAL<\/DisplayName>/g" \
+    -e "s/<Username>Tiny11<\/Username>/<Username>$USERNAME_VAL<\/Username>/g" \
     "$AUTOUNATTEND_SRC" > "$AUTOUNATTEND_SCRATCH"
+
+if [[ $SKIP_AUTOLOGON -eq 1 ]]; then
+    # Remove AutoLogon section if requested
+    sed -i.bak '/<AutoLogon>/,/<\/AutoLogon>/d' "$AUTOUNATTEND_SCRATCH" && rm -f "$AUTOUNATTEND_SCRATCH.bak"
+fi
 
 # Build WIM update command file
 WIM_CMD_FILE="$SCRATCH_DIR/install_wim_commands.txt"
@@ -428,6 +449,7 @@ done
 
 cat <<EOF >> "$WIM_CMD_FILE"
 add "$AUTOUNATTEND_SCRATCH" /Windows/System32/Sysprep/autounattend.xml
+add "$AUTOUNATTEND_SCRATCH" /Windows/Panther/unattend.xml
 add "$SCRIPT_DIR/scripts/SetupComplete.cmd" /Windows/Setup/Scripts/SetupComplete.cmd
 add "$SCRIPT_DIR/scripts/tiny11-debloat.ps1" /Windows/Setup/Scripts/tiny11-debloat.ps1
 EOF
@@ -476,6 +498,7 @@ echo -e "${GREEN}Image export and compression complete!${NC}"
 echo -e "\n${BLUE}${BOLD}[Step 8/8] Mastering bootable hybrid ISO with xorriso...${NC}"
 # Copy autounattend.xml to ISO root
 cp "$AUTOUNATTEND_SCRATCH" "$SCRATCH_DIR/tiny11/autounattend.xml"
+cp "$AUTOUNATTEND_SCRATCH" "$SCRATCH_DIR/tiny11/AutoUnattend.xml"
 
 ETFS_BOOT="boot/etfsboot.com"
 EFI_SYS="efi/microsoft/boot/efisys.bin"

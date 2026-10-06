@@ -87,6 +87,7 @@ add "{hives_out}/ntuser.dat" /Users/Default/ntuser.dat
 add "{hives_out}/SOFTWARE" /Windows/System32/config/SOFTWARE
 add "{hives_out}/SYSTEM" /Windows/System32/config/SYSTEM
 add "autounattend.xml" /Windows/System32/Sysprep/autounattend.xml
+add "autounattend.xml" /Windows/Panther/unattend.xml
 add "scripts/SetupComplete.cmd" /Windows/Setup/Scripts/SetupComplete.cmd
 add "scripts/tiny11-debloat.ps1" /Windows/Setup/Scripts/tiny11-debloat.ps1
 """)
