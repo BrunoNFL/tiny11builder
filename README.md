@@ -18,10 +18,28 @@ This script generates a significantly reduced Windows 11 image. However, **it's 
 ---
 
 ## ⚠️ Script versions:
-- **tiny11maker.ps1** : The regular script, which removes a lot of bloat but keeps the system serviceable. You can add languages, updates, and features post-creation. This is the recommended script for regular use.
-- ⚠️ **tiny11coremaker.ps1** : The core script, which removes even more bloat but also removes the ability to service the image. You cannot add languages, updates, or features post-creation. This is recommended for quick testing or development use.
+- **tiny11maker.sh** : Native shell script for **macOS** and **Linux** users! Builds Tiny11 without requiring a Windows PC or VM.
+- **tiny11maker.ps1** : The regular PowerShell script for Windows, which removes bloat while keeping the system serviceable. You can add languages, updates, and features post-creation.
+- ⚠️ **tiny11coremaker.ps1** : The core script for Windows, which removes even more bloat but also removes the ability to service the image.
 
-## Instructions:
+---
+
+## Instructions (macOS & Linux):
+1. Download a Windows 11 ISO from the [Microsoft website](https://www.microsoft.com/software-download/windows11).
+2. Install prerequisites using Homebrew (macOS):
+```bash
+brew install wimlib hivex xorriso
+```
+*(On Linux: install `wimtools`, `libhivex`, `xorriso`, and `python3` via your package manager)*
+3. Run the script:
+```bash
+./tiny11maker.sh -i /path/to/Windows11.iso
+```
+*Tip: Run `./tiny11maker.sh --help` for options like `--fast` (quicker LZX compression) or `-o <path>` to specify output file.*
+
+---
+
+## Instructions (Windows):
 1. Download Windows 11 from the [Microsoft website](https://www.microsoft.com/software-download/windows11) or [Rufus](https://github.com/pbatard/rufus)
 2. Mount the downloaded ISO image using Windows Explorer.
 3. Open **PowerShell 5.1** as Administrator. 

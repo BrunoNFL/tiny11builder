@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# macOS
+.DS_Store
+
+# Tiny11 builder artifacts
+scratch*/
+*.iso
+*.log
+oscdimg.exe
