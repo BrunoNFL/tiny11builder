@@ -335,6 +335,49 @@ case "$RAW_ARCH" in
 esac
 echo -e "Target Index: ${CYAN}$SELECTED_INDEX${NC} | Architecture: ${CYAN}$ARCH${NC}"
 
+extract_hives() {
+    local wim_file="$1"
+    local index="$2"
+    local dest_dir="$3"
+
+    mkdir -p "$dest_dir"
+
+    local cfg_list
+    cfg_list=$("$WIMLIB_BIN" dir "$wim_file" "$index" --path=/Windows/System32/config 2>/dev/null || true)
+    local usr_list
+    usr_list=$("$WIMLIB_BIN" dir "$wim_file" "$index" --path=/Users/Default 2>/dev/null || true)
+
+    local extract_args=()
+
+    local def_match
+    def_match=$(echo "$cfg_list" | grep -Ei "/Windows/System32/config/default$" | head -n 1 || true)
+    if [[ -n "$def_match" ]]; then
+        extract_args+=("$def_match")
+    fi
+
+    local soft_match
+    soft_match=$(echo "$cfg_list" | grep -Ei "/Windows/System32/config/software$" | head -n 1 || true)
+    if [[ -n "$soft_match" ]]; then
+        extract_args+=("$soft_match")
+    fi
+
+    local sys_match
+    sys_match=$(echo "$cfg_list" | grep -Ei "/Windows/System32/config/system$" | head -n 1 || true)
+    if [[ -n "$sys_match" ]]; then
+        extract_args+=("$sys_match")
+    fi
+
+    local nt_match
+    nt_match=$(echo "$usr_list" | grep -Ei "/Users/Default/ntuser.dat$" | head -n 1 || true)
+    if [[ -n "$nt_match" ]]; then
+        extract_args+=("$nt_match")
+    fi
+
+    if [[ ${#extract_args[@]} -gt 0 ]]; then
+        "$WIMLIB_BIN" extract "$wim_file" "$index" "${extract_args[@]}" --dest-dir="$dest_dir" --preserve-dir-structure >/dev/null
+    fi
+}
+
 # ------------------------------------------------------------------------------
 # STEP 4: Modify Registry Hives in install.wim (via hivex)
 # ------------------------------------------------------------------------------
@@ -342,12 +385,7 @@ echo -e "\n${BLUE}${BOLD}[Step 4/8] Extracting and modifying offline registry hi
 HIVES_INSTALL="$SCRATCH_DIR/hives_install"
 mkdir -p "$HIVES_INSTALL"
 
-"$WIMLIB_BIN" extract "$INSTALL_WIM" "$SELECTED_INDEX" \
-    /Windows/System32/config/default \
-    /Users/Default/ntuser.dat \
-    /Windows/System32/config/SOFTWARE \
-    /Windows/System32/config/SYSTEM \
-    --dest-dir="$HIVES_INSTALL" --nullglob --preserve-dir-structure >/dev/null
+extract_hives "$INSTALL_WIM" "$SELECTED_INDEX" "$HIVES_INSTALL"
 
 "$PYTHON_BIN" "$SCRIPT_DIR/scripts/modify_registry.py" --hive-dir "$HIVES_INSTALL" --target install
 
@@ -358,9 +396,8 @@ echo -e "\n${BLUE}${BOLD}[Step 5/8] Preparing unattended answers and debloater s
 AUTOUNATTEND_SRC="$SCRIPT_DIR/autounattend.xml"
 AUTOUNATTEND_SCRATCH="$SCRATCH_DIR/autounattend.xml"
 
-# Update processorArchitecture and image index dynamically in autounattend.xml
+# Update processorArchitecture dynamically in autounattend.xml (index remains 1 for single-SKU exported image)
 sed -e "s/processorArchitecture=\"amd64\"/processorArchitecture=\"$ARCH\"/g" \
-    -e "s|<Value>1</Value>|<Value>$SELECTED_INDEX</Value>|g" \
     "$AUTOUNATTEND_SRC" > "$AUTOUNATTEND_SCRATCH"
 
 # Build WIM update command file
@@ -369,6 +406,11 @@ cat <<EOF > "$WIM_CMD_FILE"
 delete --force --recursive "/Program Files (x86)/Microsoft/Edge"
 delete --force --recursive "/Program Files (x86)/Microsoft/EdgeUpdate"
 delete --force --recursive "/Program Files (x86)/Microsoft/EdgeCore"
+delete --force --recursive "/Program Files (x86)/Microsoft/EdgeWebView"
+delete --force --recursive "/Program Files/Microsoft/Edge"
+delete --force --recursive "/Program Files/Microsoft/EdgeUpdate"
+delete --force --recursive "/Program Files/Microsoft/EdgeCore"
+delete --force --recursive "/Program Files/Microsoft/EdgeWebView"
 delete --force --recursive "/Windows/System32/Microsoft-Edge-Webview"
 delete --force "/Windows/System32/OneDriveSetup.exe"
 delete --force "/Windows/System32/Tasks/Microsoft/Windows/Application Experience/Microsoft Compatibility Appraiser"
@@ -376,10 +418,15 @@ delete --force --recursive "/Windows/System32/Tasks/Microsoft/Windows/Customer E
 delete --force "/Windows/System32/Tasks/Microsoft/Windows/Application Experience/ProgramDataUpdater"
 delete --force "/Windows/System32/Tasks/Microsoft/Windows/Chkdsk/Proxy"
 delete --force "/Windows/System32/Tasks/Microsoft/Windows/Windows Error Reporting/QueueReporting"
-add "$HIVES_INSTALL/Windows/System32/config/default" /Windows/System32/config/default
-add "$HIVES_INSTALL/Users/Default/ntuser.dat" /Users/Default/ntuser.dat
-add "$HIVES_INSTALL/Windows/System32/config/SOFTWARE" /Windows/System32/config/SOFTWARE
-add "$HIVES_INSTALL/Windows/System32/config/SYSTEM" /Windows/System32/config/SYSTEM
+EOF
+
+# Dynamically add all modified hives found on disk
+find "$HIVES_INSTALL" -type f | while read -r hive_file; do
+    rel_path="${hive_file#$HIVES_INSTALL}"
+    echo "add \"$hive_file\" \"$rel_path\"" >> "$WIM_CMD_FILE"
+done
+
+cat <<EOF >> "$WIM_CMD_FILE"
 add "$AUTOUNATTEND_SCRATCH" /Windows/System32/Sysprep/autounattend.xml
 add "$SCRIPT_DIR/scripts/SetupComplete.cmd" /Windows/Setup/Scripts/SetupComplete.cmd
 add "$SCRIPT_DIR/scripts/tiny11-debloat.ps1" /Windows/Setup/Scripts/tiny11-debloat.ps1
@@ -398,20 +445,16 @@ if [[ -f "$BOOT_WIM" ]]; then
     HIVES_BOOT="$SCRATCH_DIR/hives_boot"
     mkdir -p "$HIVES_BOOT"
 
-    "$WIMLIB_BIN" extract "$BOOT_WIM" 2 \
-        /Windows/System32/config/default \
-        /Users/Default/ntuser.dat \
-        /Windows/System32/config/SYSTEM \
-        --dest-dir="$HIVES_BOOT" --nullglob --preserve-dir-structure >/dev/null
+    extract_hives "$BOOT_WIM" 2 "$HIVES_BOOT"
 
     "$PYTHON_BIN" "$SCRIPT_DIR/scripts/modify_registry.py" --hive-dir "$HIVES_BOOT" --target boot
 
     BOOT_CMD_FILE="$SCRATCH_DIR/boot_wim_commands.txt"
-    cat <<EOF > "$BOOT_CMD_FILE"
-add "$HIVES_BOOT/Windows/System32/config/default" /Windows/System32/config/default
-add "$HIVES_BOOT/Users/Default/ntuser.dat" /Users/Default/ntuser.dat
-add "$HIVES_BOOT/Windows/System32/config/SYSTEM" /Windows/System32/config/SYSTEM
-EOF
+    > "$BOOT_CMD_FILE"
+    find "$HIVES_BOOT" -type f | while read -r hive_file; do
+        rel_path="${hive_file#$HIVES_BOOT}"
+        echo "add \"$hive_file\" \"$rel_path\"" >> "$BOOT_CMD_FILE"
+    done
 
     "$WIMLIB_BIN" update "$BOOT_WIM" 2 < "$BOOT_CMD_FILE" >/dev/null
     "$WIMLIB_BIN" optimize "$BOOT_WIM" --check >/dev/null 2>&1 || true
