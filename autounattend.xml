@@ -44,33 +44,10 @@
                 <HideEULAPage>true</HideEULAPage>
                 <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
                 <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
-                <HideLocalAccountScreen>true</HideLocalAccountScreen>
                 <ProtectYourPC>3</ProtectYourPC>
             </OOBE>
             <ConfigureChatAutoInstall>false</ConfigureChatAutoInstall>
-            <UserAccounts>
-                <LocalAccounts>
-                    <LocalAccount wcm:action="add">
-                        <Description>Local Administrator</Description>
-                        <DisplayName>Tiny11</DisplayName>
-                        <Group>Administrators</Group>
-                        <Name>Tiny11</Name>
-                        <Password>
-                            <Value></Value>
-                            <PlainText>true</PlainText>
-                        </Password>
-                    </LocalAccount>
-                </LocalAccounts>
-            </UserAccounts>
-            <AutoLogon>
-                <Enabled>true</Enabled>
-                <LogonCount>1</LogonCount>
-                <Username>Tiny11</Username>
-                <Password>
-                    <Value></Value>
-                    <PlainText>true</PlainText>
-                </Password>
-            </AutoLogon>
+            <!-- USER_ACCOUNTS_PLACEHOLDER -->
         </component>
     </settings>
 </unattend>

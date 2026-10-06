@@ -25,7 +25,8 @@ SELECTED_INDEX=""
 COMPRESS_MODE="LZMS" # Default recovery compression
 KEEP_SCRATCH=0
 MOUNTED_VOLUME=""
-USERNAME_VAL="Tiny11"
+AUTO_USER=0
+USERNAME_VAL=""
 SKIP_AUTOLOGON=0
 
 # Colors for terminal output
@@ -53,12 +54,14 @@ print_usage() {
     echo "  -s, --scratch <dir>      Scratch workspace directory (default: ./scratch_tiny11)"
     echo "  -o, --output <path>      Output ISO file path (default: ./tiny11.iso)"
     echo "  -n, --index <number>     Windows image SKU index to export (optional, prompts if omitted)"
-    echo "  -w, --wimlib <path>      Custom path to wimlib-imagex executable"
-    echo "  -u, --username <name>    Local administrator account name (default: Tiny11)"
-    echo "      --skip-autologon     Do not auto-logon to the local account on first boot"
-    echo "      --fast               Use LZX compression instead of LZMS (faster export, slightly larger ISO)"
-    echo "      --keep-scratch       Do not delete scratch directory after completion"
-    echo "      --check-deps         Verify installed prerequisites and exit"
+    echo "  -w, --wimlib <path>          Custom path to wimlib-imagex executable"
+    echo "  -u, --username <name>        Create local admin account and skip user creation (default: Tiny11)"
+    echo "      --skip-user-creation     Skip manual user creation in OOBE and auto-create local account"
+    echo "      --auto-user [name]       Alias for --skip-user-creation (optional account name)"
+    echo "      --skip-autologon         Do not auto-logon to desktop when local account is created"
+    echo "      --fast                   Use LZX compression instead of LZMS (faster export, slightly larger ISO)"
+    echo "      --keep-scratch           Do not delete scratch directory after completion"
+    echo "      --check-deps             Verify installed prerequisites and exit"
     echo "  -h, --help               Display this help message"
     echo ""
     echo "Example:"
@@ -186,8 +189,27 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -u|--username)
+            AUTO_USER=1
             USERNAME_VAL="$2"
             shift 2
+            ;;
+        --skip-user-creation)
+            AUTO_USER=1
+            if [[ -n "$2" && "$2" != -* ]]; then
+                USERNAME_VAL="$2"
+                shift 2
+            else
+                shift 1
+            fi
+            ;;
+        --auto-user)
+            AUTO_USER=1
+            if [[ -n "$2" && "$2" != -* ]]; then
+                USERNAME_VAL="$2"
+                shift 2
+            else
+                shift 1
+            fi
             ;;
         --skip-autologon)
             SKIP_AUTOLOGON=1
@@ -409,16 +431,31 @@ AUTOUNATTEND_SRC="$SCRIPT_DIR/autounattend.xml"
 AUTOUNATTEND_SCRATCH="$SCRATCH_DIR/autounattend.xml"
 
 # Update processorArchitecture dynamically in autounattend.xml (index remains 1 for single-SKU exported image)
-# Also inject configured local username
 sed -e "s/processorArchitecture=\"amd64\"/processorArchitecture=\"$ARCH\"/g" \
-    -e "s/<Name>Tiny11<\/Name>/<Name>$USERNAME_VAL<\/Name>/g" \
-    -e "s/<DisplayName>Tiny11<\/DisplayName>/<DisplayName>$USERNAME_VAL<\/DisplayName>/g" \
-    -e "s/<Username>Tiny11<\/Username>/<Username>$USERNAME_VAL<\/Username>/g" \
     "$AUTOUNATTEND_SRC" > "$AUTOUNATTEND_SCRATCH"
 
-if [[ $SKIP_AUTOLOGON -eq 1 ]]; then
-    # Remove AutoLogon section if requested
-    sed -i.bak '/<AutoLogon>/,/<\/AutoLogon>/d' "$AUTOUNATTEND_SCRATCH" && rm -f "$AUTOUNATTEND_SCRATCH.bak"
+if [[ $AUTO_USER -eq 1 ]]; then
+    if [[ -z "$USERNAME_VAL" ]]; then
+        USERNAME_VAL="Tiny11"
+    fi
+    echo -e "Automating local user creation with account: ${CYAN}$USERNAME_VAL${NC}"
+    USER_XML="            <UserAccounts>\n                <LocalAccounts>\n                    <LocalAccount wcm:action=\"add\">\n                        <Description>Local Administrator</Description>\n                        <DisplayName>$USERNAME_VAL</DisplayName>\n                        <Group>Administrators</Group>\n                        <Name>$USERNAME_VAL</Name>\n                        <Password>\n                            <Value></Value>\n                            <PlainText>true</PlainText>\n                        </Password>\n                    </LocalAccount>\n                </LocalAccounts>\n            </UserAccounts>"
+
+    if [[ $SKIP_AUTOLOGON -eq 0 ]]; then
+        USER_XML="$USER_XML\n            <AutoLogon>\n                <Enabled>true</Enabled>\n                <LogonCount>1</LogonCount>\n                <Username>$USERNAME_VAL</Username>\n                <Password>\n                    <Value></Value>\n                    <PlainText>true</PlainText>\n                </Password>\n            </AutoLogon>"
+    fi
+
+    "$PYTHON_BIN" -c "
+with open('$AUTOUNATTEND_SCRATCH', 'r', encoding='utf-8') as f:
+    c = f.read()
+repl = '''$USER_XML'''.replace('\\\\n', '\n')
+c = c.replace('<!-- USER_ACCOUNTS_PLACEHOLDER -->', repl)
+with open('$AUTOUNATTEND_SCRATCH', 'w', encoding='utf-8') as f:
+    f.write(c)
+"
+else
+    # Remove placeholder comment for standard interactive setup
+    sed -i.bak '/<!-- USER_ACCOUNTS_PLACEHOLDER -->/d' "$AUTOUNATTEND_SCRATCH" && rm -f "$AUTOUNATTEND_SCRATCH.bak"
 fi
 
 # Build WIM update command file

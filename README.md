@@ -1,140 +1,161 @@
 # tiny11builder
-*Scripts to build a trimmed-down Windows 11 image - now in **PowerShell**!*
+*Scripts to build a trimmed-down, bloatware-free Windows 11 image — natively on **macOS**, **Linux**, and **Windows**!*
 
-## Introduction :
-Tiny11 builder, now completely overhauled. <br> After more than a year (for which I am so sorry) of no updates, tiny11 builder is now a much more complete and flexible solution - one script fits all. Also, it is a steppingstone for an even more fleshed-out solution.
-
-You can now use it on ANY Windows 11 release (not just a specific build), as well as ANY language or architecture.
-This is made possible thanks to the much-improved scripting capabilities of PowerShell, compared to the older Batch release.
-
-This is a script created to automate the build of a streamlined Windows 11 image, similar to tiny10.
-The script has also been updated to use DISM's recovery compression, resulting in a much smaller final ISO size, and no utilities from external sources. The only other executable included is **oscdimg.exe**, which is provided in the Windows ADK and it is used to create bootable ISO images. 
-Also included is an unattended answer file, which is used to bypass the Microsoft Account on OOBE and to deploy the image with the `/compact` flag.
-It's open-source, **so feel free to add or remove anything you want!** Feedback is also much appreciated.
-
-Also, for the very first time, **introducing tiny11 core builder**! A more powerful script, designed for a quick and dirty development testbed. Just the bare minimum, none of the fluff. 
-This script generates a significantly reduced Windows 11 image. However, **it's not suitable for regular use due to its lack of serviceability - you can't add languages, updates, or features post-creation**. tiny11 Core is not a full Windows 11 substitute but a rapid testing or development tool, potentially useful for VM environments.
+Fork repository: **[BrunoNFL/tiny11builder](https://github.com/BrunoNFL/tiny11builder)**  
+Upstream repository: **[ntdevlabs/tiny11builder](https://github.com/ntdevlabs/tiny11builder)**
 
 ---
 
-## ⚠️ Script versions:
-- **tiny11maker.sh** : Native shell script for **macOS** and **Linux** users! Builds Tiny11 without requiring a Windows PC or VM.
-- **tiny11maker.ps1** : The regular PowerShell script for Windows, which removes bloat while keeping the system serviceable. You can add languages, updates, and features post-creation.
-- ⚠️ **tiny11coremaker.ps1** : The core script for Windows, which removes even more bloat but also removes the ability to service the image.
+## Overview
+
+Tiny11 builder automates the creation of a streamlined, debloated Windows 11 installation media. It bypasses Microsoft's artificial hardware restrictions (TPM 2.0, Secure Boot, RAM, CPU checks, and storage requirements), removes telemetry, sponsored apps, and bloatware, and allows offline local account creation without forcing a Microsoft Account.
+
+### Key Capabilities of this Fork:
+- 🍏 **Native macOS & Linux Support**: Remaster official Windows 11 ARM64 and x64 ISOs directly on macOS (Apple Silicon or Intel) or Linux without needing a Windows PC or virtual machine!
+- ⚡ **Zero Windows Servicing Binaries on Mac**: Uses `wimlib-imagex` for WIM modifications, `libhivex` for offline registry hives, and `xorriso` for hybrid UEFI/BIOS bootable ISO generation.
+- 👤 **Flexible User Setup**:
+  - **Standard Mode (Default)**: Normal interactive setup where you create your own username and password during OOBE, with network requirement checks bypassed.
+  - **Unattended Mode (`--skip-user-creation`)**: Automatically creates an offline local administrator account and logs directly into the desktop.
+- 🖥️ **Virtual Machine Ready**: Optimized for Apple Silicon virtualization tools such as **UTM**, **VMware Fusion**, and **Parallels Desktop**.
 
 ---
 
-## Instructions (macOS & Linux):
-1. Download a Windows 11 ISO from the [Microsoft website](https://www.microsoft.com/software-download/windows11).
-2. Install prerequisites using Homebrew (macOS):
+## 🛠️ Script Versions
+
+| Script | Platform | Description |
+| :--- | :--- | :--- |
+| **`tiny11maker.sh`** | **macOS / Linux** | Native Bash script with Python registry modifier (`hivex`), `wimlib`, and `xorriso`. Supports interactive SKU selection, fast LZX compression, and optional unattended user creation. |
+| **`tiny11maker.ps1`** | **Windows** | The original PowerShell script for Windows. Removes bloat while preserving servicing components. |
+| **`tiny11coremaker.ps1`** | **Windows** | Minimalist build for quick testing environments. Significantly smaller, but removes servicing/WinSxS. |
+
+---
+
+## 🚀 Instructions: macOS & Linux
+
+### 1. Prerequisites Installation
+
+Install the required tools via [Homebrew](https://brew.sh/) on macOS:
 ```bash
 brew install wimlib hivex xorriso
 ```
-*(On Linux: install `wimtools`, `libhivex`, `xorriso`, and `python3` via your package manager)*
-3. Run the script:
+*(On Debian/Ubuntu Linux: `sudo apt install wimtools libhivex-bin xorriso python3`)*
+
+Verify your setup:
+```bash
+./tiny11maker.sh --check-deps
+```
+
+### 2. Download Windows 11 ISO
+Download an official Windows 11 ISO (x64 or ARM64) from the [Microsoft Download Page](https://www.microsoft.com/software-download/windows11) or [UUP dump](https://uupdump.net/).
+
+### 3. Build Your Tiny11 ISO
+
+#### Standard Interactive Setup (Default):
+Lets you choose your own username and password during initial Windows setup:
 ```bash
 ./tiny11maker.sh -i /path/to/Windows11.iso
 ```
-*Tip: Run `./tiny11maker.sh --help` for options like `--fast` (quicker LZX compression) or `-o <path>` to specify output file.*
 
----
+#### Unattended Setup (Skip User Creation & Boot Directly to Desktop):
+Automatically pre-creates a local administrator account and enables auto-logon:
+```bash
+# Auto-creates user "Tiny11" and auto-logins to desktop
+./tiny11maker.sh -i /path/to/Windows11.iso --skip-user-creation
 
-## Instructions (Windows):
-1. Download Windows 11 from the [Microsoft website](https://www.microsoft.com/software-download/windows11) or [Rufus](https://github.com/pbatard/rufus)
-2. Mount the downloaded ISO image using Windows Explorer.
-3. Open **PowerShell 5.1** as Administrator. 
-5. Change the script execution policy :
-```powershell
-Set-ExecutionPolicy Bypass -Scope Process
+# Or specify a custom account name:
+./tiny11maker.sh -i /path/to/Windows11.iso --skip-user-creation "MyUser"
 ```
-> Using `-Scope Process` you keep your original policy intact as this change only lasts for the current PowerShell session. 
 
-6. Start the script :
-```powershell
-C:/path/to/your/tiny11/script.ps1 -ISO <letter> -SCRATCH <letter>
-``` 
-> You can see of the script by running the `get-help` command.
+#### Fast Export Mode:
+Use `--fast` to employ LZX compression instead of recovery LZMS (builds in ~1 minute instead of ~5 minutes):
+```bash
+./tiny11maker.sh -i /path/to/Windows11.iso --fast -o ./tiny11_custom.iso
+```
 
-6. Select the drive letter where the image is mounted (only the letter, no colon (:))
-7. Select the SKU that you want the image to be based.
-8. Sit back and relax :)
-9. When the image is completed, you will see it in the folder where the script was extracted, with the name tiny11.iso
+### 4. CLI Options Reference
 
----
+```text
+Usage: ./tiny11maker.sh [options]
 
-## What is removed:
-<table>
-  <tbody>
-    <tr>
-      <th>Tiny11maker</th>
-      <th>Tiny11coremaker</th>
-    </tr>
-    <tr>
-      <td>
-        <ul>
-          <li>Clipchamp</li>
-          <li>News</li>
-          <li>Weather</li>
-          <li>Xbox</li>
-          <li>GetHelp</li>
-          <li>GetStarted</li>
-          <li>Office Hub</li>
-          <li>Solitaire</li>
-          <li>PeopleApp</li>
-          <li>PowerAutomate</li>
-          <li>ToDo</li>
-          <li>Alarms</li>
-          <li>Mail and Calendar</li>
-          <li>Feedback Hub</li>
-          <li>Maps</li>
-          <li>Sound Recorder</li>
-          <li>Your Phone</li>
-          <li>Media Player</li>
-          <li>QuickAssist</li>
-          <li>Internet Explorer</li>
-          <li>Tablet PC Math</li>
-          <li>Edge</li>
-          <li>OneDrive</li>
-        </ul>
-      </td>
-      <td>
-        <ul>
-          <li>all from regular tiny +</li>
-          <li>Windows Component Store (WinSxS)</li>
-          <li>Windows Defender (only disabled, can be enabled back if needed)</li>
-          <li>Windows Update (wouldn't work without WinSxS, enabling it would put the system in a state of failure)</li>
-          <li>WinRE</li>
-        </ul>
-      </td>
-    </tr>
-  </tbody>
-</table>
-
-Keep in mind that **you cannot add back features in tiny11 core**! <br>
-You will be asked during image creation if you want to enable .net 3.5 support!
+Options:
+  -i, --iso <path>             Path to the Windows 11 ISO file
+  -s, --scratch <dir>          Scratch workspace directory (default: ./scratch_tiny11)
+  -o, --output <path>          Output ISO file path (default: ./tiny11.iso)
+  -n, --index <number>         Windows image SKU index to export (e.g. 1, 2, 3)
+  -w, --wimlib <path>          Custom path to wimlib-imagex executable
+  -u, --username <name>        Create local admin account and skip user creation (default: Tiny11)
+      --skip-user-creation     Skip manual user creation in OOBE and auto-create local account
+      --auto-user [name]       Alias for --skip-user-creation (optional account name)
+      --skip-autologon         Do not auto-logon to desktop when local account is created
+      --fast                   Use LZX compression instead of LZMS (faster export)
+      --keep-scratch           Do not delete scratch directory after completion
+      --check-deps             Verify installed prerequisites and exit
+  -h, --help                   Display this help message
+```
 
 ---
 
-## Known issues:
-- Although Edge is removed, there are some remnants in the Settings, but the app in itself is deleted. 
-- You might have to update Winget before being able to install any apps, using Microsoft Store.
-- Outlook and Dev Home might reappear after some time. This is an ongoing battle, though the latest script update tries to prevent this more aggressively.
-- If you are using this script on arm64, you might see a glimpse of an error while running the script. This is caused by the fact that the arm64 image doesn't have OneDriveSetup.exe included in the System32 folder.
+## 💻 Virtual Machine Tips (Apple Silicon Mac)
+
+When running Windows 11 ARM64 in virtual machines (UTM, VMware Fusion, Parallels):
+
+### If Windows Setup asks to "Connect to a network"
+If you performed a standard install without `--skip-user-creation` and the VM has no internet or missing network drivers:
+1. In the VM window, press **Shift + F10** (or **Fn + Shift + F10** on Mac).
+2. In the Command Prompt, type:
+   ```cmd
+   start ms-cxh:localonly
+   ```
+   and press **Enter**. This instantly bypasses the network screen and opens the local account creation page.
+3. Alternatively, run `OOBE\BYPASSNRO` and press Enter to reboot into limited offline setup.
+
+### Installing Network & Display Drivers in UTM
+Windows 11 ARM64 does not bundle VirtIO drivers out of the box:
+1. In the UTM top bar, click the CD icon and select **Install Windows Guest Tools** (or mount `spice-guest-tools.iso`).
+2. Open Command Prompt with **Fn + Shift + F10**, navigate to `D:\` (or your CD drive), and run `spice-guest-tools-xxx.exe`.
 
 ---
 
-## Features to be implemented:
-- ~~disabling telemetry~~ (Implemented in the 04-29-24 release!)
-- ~~more ad suppression~~ (Partially implemented in the 09-06-25 release!)
-- improved language and arch detection
-- more flexibility in what to keep and what to delete
-- maybe a GUI???
+## 🪟 Instructions: Windows (PowerShell)
 
-And that's pretty much it for now!
-## ❤️ Support the Project
+1. Download Windows 11 from Microsoft or Rufus.
+2. Mount the ISO in Windows Explorer.
+3. Open **PowerShell 5.1** as Administrator.
+4. Set execution policy:
+   ```powershell
+   Set-ExecutionPolicy Bypass -Scope Process
+   ```
+5. Run the builder script:
+   ```powershell
+   .\tiny11maker.ps1 -ISO <DriveLetter> -SCRATCH <DriveLetter>
+   ```
+6. Follow on-screen instructions to select the SKU edition.
 
-If this project has helped you, please consider showing your support! A small donation helps me dedicate more time to projects like this.
-Thank you!
+---
 
-**[Patreon](http://patreon.com/ntdev) | [PayPal](http://paypal.me/ntdev2) | [Ko-fi](http://ko-fi.com/ntdev)**
-Thanks for trying it and let me know how you like it!
+## 🗑️ What Is Removed
+
+| Tiny11maker | Tiny11coremaker |
+| :--- | :--- |
+| Clipchamp, News, Weather, Xbox, GetHelp, GetStarted, Office Hub, Solitaire, PeopleApp, PowerAutomate, ToDo, Alarms, Mail & Calendar, Feedback Hub, Maps, Sound Recorder, Phone Link, Media Player, QuickAssist, Edge, OneDrive, Copilot, Telemetry tasks | All from regular Tiny11 + Windows Component Store (WinSxS), Windows Defender, Windows Update, WinRE |
+
+---
+
+## 🧪 Testing
+
+This repository includes automated test suites for the offline registry modifier, unattend generator, and WIM remastering pipeline:
+
+```bash
+# Run all unit and integration tests:
+python3 scripts/test_unattend.py
+python3 scripts/test_registry.py
+python3 scripts/test_pipeline.py
+```
+
+---
+
+## ❤️ Credits & Support
+
+- Original concept and Windows scripts by **[ntdevlabs](https://github.com/ntdevlabs)**. Support the original creator:
+  **[Patreon](http://patreon.com/ntdev) | [PayPal](http://paypal.me/ntdev2) | [Ko-fi](http://ko-fi.com/ntdev)**
+- macOS and Linux port, offline registry engine, and unattended enhancements maintained by **[BrunoNFL](https://github.com/BrunoNFL)**.
